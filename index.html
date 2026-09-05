@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLINGSHOT — Orbital Hopper</title>
+<meta name="description" content="A one-button orbital game of gravity, curved shots and stars.">
+<meta property="og:title" content="SLINGSHOT — Orbital Hopper">
+<meta property="og:description" content="One button. Real gravity. Chain captures, graze suns, chase combos.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:#0b0d10}
+  canvas{display:block}
+  #ui{position:fixed;inset:0;pointer-events:none;font-family:'Space Grotesk',sans-serif;color:#f2ede4}
+  #hud{position:absolute;top:22px;left:26px}
+  #score{font-family:'Unbounded';font-weight:800;font-size:34px;letter-spacing:1px}
+  #hud .lbl{font-size:11px;letter-spacing:4px;opacity:.55;margin-top:2px}
+  #combo{font-family:'Unbounded';font-weight:500;font-size:15px;color:#ffd166;margin-top:8px;opacity:0;transition:opacity .2s,transform .2s}
+  #combo.on{opacity:1;transform:scale(1.08)}
+  #best{position:absolute;top:26px;right:96px;text-align:right;font-size:13px;letter-spacing:2px;opacity:.6}
+  #best b{font-size:20px;display:block;font-family:'Unbounded';font-weight:500}
+  #sector{position:absolute;top:26px;left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:5px;opacity:.45;text-transform:uppercase}
+  #lvl{position:absolute;top:48px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:3px;color:#ffd166;opacity:.7}
+  #sysBtns{position:absolute;top:22px;right:22px;display:flex;gap:8px;pointer-events:auto}
+  .sysBtn{width:40px;height:40px;border:1px solid rgba(242,237,228,.3);border-radius:10px;background:rgba(11,13,16,.5);color:#f2ede4;font-size:16px;cursor:pointer}
+  .sysBtn:hover{border-color:#ff6b4a;color:#ff6b4a}
+  #brakeWrap{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);width:160px;opacity:0;transition:opacity .3s}
+  #brakeWrap.on{opacity:.85}
+  #brakeWrap .lbl{font-size:10px;letter-spacing:4px;text-align:center;margin-bottom:5px;opacity:.6}
+  #brakeBar{height:4px;background:rgba(242,237,228,.15);border-radius:2px;overflow:hidden}
+  #brakeFill{height:100%;width:100%;background:#3d5a5b;border-radius:2px}
+  #banner{position:absolute;top:34%;left:0;right:0;text-align:center;opacity:0;transition:opacity .5s}
+  #banner .s{font-family:'Unbounded';font-weight:800;font-size:40px;letter-spacing:6px}
+  #banner .n{font-size:13px;letter-spacing:6px;color:#ff6b4a;text-transform:uppercase;margin-top:6px}
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;background:rgba(11,13,16,.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:opacity .35s}
+  .screen.hidden{opacity:0;pointer-events:none!important}
+  .screen *{pointer-events:auto}
+  h1{font-family:'Unbounded';font-weight:800;font-size:clamp(36px,7vw,64px);letter-spacing:4px}
+  h1 span{color:#ff6b4a}
+  .sub{letter-spacing:5px;font-size:12px;opacity:.7;text-transform:uppercase}
+  .key{margin-top:6px;font-size:12px;letter-spacing:2px;border:1px solid rgba(242,237,228,.35);padding:10px 24px;border-radius:999px;animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{border-color:rgba(255,107,74,.9);color:#ff6b4a}}
+  #deathReason{font-size:13px;letter-spacing:3px;color:#ff6b4a;text-transform:uppercase}
+  .big{font-family:'Unbounded';font-weight:800;font-size:52px}
+  #runStats{display:flex;gap:28px;margin-top:4px;flex-wrap:wrap;justify-content:center}
+  #runStats div{text-align:center}
+  #runStats b{font-family:'Unbounded';font-size:20px;display:block;font-weight:500}
+  #runStats span{font-size:10px;letter-spacing:3px;opacity:.55;text-transform:uppercase}
+  .modeGrid{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:8px;pointer-events:auto}
+  .modeBtn{font-family:'Space Grotesk';font-size:13px;letter-spacing:2px;padding:12px 20px;border-radius:12px;cursor:pointer;border:1px solid rgba(242,237,228,.3);background:transparent;color:#f2ede4;text-transform:uppercase;transition:all .15s}
+  .modeBtn:hover{border-color:#ff6b4a;color:#ff6b4a;transform:translateY(-2px)}
+  .modeBtn.sel{border-color:#ffd166;color:#ffd166}
+  #mpResult{font-family:'Unbounded';font-size:22px;font-weight:500}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud"><div id="score">0</div><div class="lbl">SCORE</div><div id="combo">COMBO ×2</div></div>
+  <div id="sector">MEDIUM</div><div id="lvl"></div>
+  <div id="best">BEST<b id="bestVal">0</b></div>
+  <div id="sysBtns">
+    <button class="sysBtn" id="btnPause" title="Pause (P)">⏸</button>
+    <button class="sysBtn" id="btnRestart" title="Restart (R)">⟲</button>
+  </div>
+  <div id="brakeWrap"><div class="lbl">BRAKE — HOLD</div><div id="brakeBar"><div id="brakeFill"></div></div></div>
+  <div id="banner"><div class="s" id="bannerS">SECTOR 2</div><div class="n" id="bannerN">moving planets</div></div>
+
+  <div class="screen" id="menu">
+    <div class="sub">a one-button orbital game</div>
+    <h1>SLING<span>SHOT</span></h1>
+    <div class="modeGrid" id="modeGrid">
+      <button class="modeBtn" data-mode="easy">Easy</button>
+      <button class="modeBtn sel" data-mode="medium">Medium</button>
+      <button class="modeBtn" data-mode="hard">Hard</button>
+      <button class="modeBtn" data-mode="insane">Insane</button>
+      <button class="modeBtn" data-mode="infinite">∞ Infinite</button>
+      <button class="modeBtn" data-mode="versus">👥 2P Duel</button>
+    </div>
+    <div class="sub" id="modeDesc">hold to aim · release to launch</div>
+    <div class="key" id="startKey">HOLD — AIM · RELEASE — LAUNCH · TAP MID-FLIGHT — DASH</div>
+  </div>
+
+  <div class="screen hidden" id="pass">
+    <div class="sub">player 1 finished</div>
+    <div class="big" id="p1Score">0</div>
+    <div class="sub">hand the device to player 2</div>
+    <div class="key">TAP TO START PLAYER 2 — SAME WORLD</div>
+  </div>
+
+  <div class="screen hidden" id="dead">
+    <div id="deathReason">CRASHED</div>
+    <div class="big" id="finalScore">0</div>
+    <div class="sub">points scored</div>
+    <div id="mpResult"></div>
+    <div id="runStats">
+      <div><b id="stCaptures">0</b><span>captures</span></div>
+      <div><b id="stStars">0</b><span>stars</span></div>
+      <div><b id="stGraze">—</b><span>best graze</span></div>
+      <div><b id="stSector">1</b><span>level</span></div>
+    </div>
+    <div class="key">TAP TO PLAY AGAIN · M FOR MENU</div>
+  </div>
+
+  <div class="screen hidden" id="pause">
+    <h1 style="font-size:36px">PAUSED</h1>
+    <div class="key">TAP OR PRESS P TO RESUME</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const TAU=Math.PI*2;
+const cvs=document.getElementById('c'), ctx=cvs.getContext('2d');
+const $=id=>document.getElementById(id);
+const DOM={}; ['score','combo','sector','lvl','bestVal','brakeWrap','brakeFill','banner','bannerS','bannerN',
+ 'menu','dead','pause','pass','deathReason','finalScore','mpResult','stCaptures','stStars','stGraze',
+ 'stSector','modeDesc','p1Score'].forEach(k=>DOM[k]=$(k));
+
+const INK='#0b0d10',CREAM='#f2ede4',CORAL='#ff6b4a',TEAL='#3d5a5b',GOLD='#ffd166';
+const SECTORS=[{name:'DRIFT',accent:'#f2ede4'},{name:'TIDES',accent:'#7fd1c9'},
+ {name:'BINARIES',accent:'#b8a7e8'},{name:'FURNACE',accent:'#ff8c5a'},{name:'DEEP',accent:'#5a8fd1'}];
+
+const DIFFS={
+  easy:    {name:'EASY',    speed:220,gapB:210,gapS:110,sunC:0.04,binC:0.00,movC:0.35,gravWin:4.5,capWin:2.0},
+  medium:  {name:'MEDIUM',  speed:250,gapB:250,gapS:160,sunC:0.10,binC:0.08,movC:0.50,gravWin:3.5,capWin:1.45},
+  hard:    {name:'HARD',    speed:285,gapB:290,gapS:200,sunC:0.18,binC:0.16,movC:0.65,gravWin:3.0,capWin:1.2},
+  insane:  {name:'INSANE',  speed:330,gapB:330,gapS:240,sunC:0.26,binC:0.22,movC:0.80,gravWin:2.5,capWin:1.0},
+  infinite:{name:'INFINITE',speed:240,gapB:230,gapS:150,sunC:0.06,binC:0.05,movC:0.40,gravWin:4.0,capWin:1.6},
+  versus:  {name:'2P DUEL', speed:250,gapB:250,gapS:160,sunC:0.12,binC:0.10,movC:0.50,gravWin:3.5,capWin:1.45},
+};
+let modeName='medium';
+const CFG=()=>DIFFS[modeName];
+function infLevel(){ return (modeName!=='infinite'&&modeName!=='versus')?1:Math.min(1+((run?run.captures:0)/8|0),7); }
+function effCfg(){
+  const c={...CFG()}, lvl=infLevel();
+  if(modeName==='infinite'||modeName==='versus'){
+    const k=(lvl-1)/6;
+    c.speed+=k*70; c.gapB+=k*100; c.sunC=Math.min(c.sunC+k*0.20,0.35);
+    c.binC=Math.min(c.binC+k*0.12,0.25); c.movC=Math.min(c.movC+k*0.3,0.85);
+    c.gravWin-=k*1.2; c.capWin=Math.max(0.8,c.capWin-k*0.4);
+  }
+  return c;
+}
+let bestKey=()=>'slingshot_best_'+CFG().name;
+
+/* audio */
+let AC=null;
+function initAudio(){ if(AC) return;
+  try{ AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); }
+  catch(e){ AC=null; } }
+function beep(f,d=0.08,type='sine',vol=0.15,slide=0){
+  if(!AC||AC.state!=='running') return;
+  try{ const o=AC.createOscillator(),g=AC.createGain();
+    o.type=type; o.frequency.value=f;
+    if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(30,f+slide),AC.currentTime+d);
+    g.gain.setValueAtTime(vol,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
+    o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime+d);
+  }catch(e){} }
+
+/* seeded rng */
+function mulberry32(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0;
+  let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }; }
+let rng=Math.random; const R=()=>rng();
+
+/* state */
+let state='menu', W,H,DPR;
+let planets=[],suns=[],stars=[],particles=[],trail=[],preview=[];
+let player, cam={x:0,y:0}, shake=0, timeScale=1, genX=0, lastY=0;
+let run, deathTimer=0, nearVoid=0, holding=false, pressT=0, focus=false;
+let deadShownAt=0, graceUntil=0; const VOID_DIST=850;
+
+/* scoring */
+const Score={
+  rules:{ star:c=>10*c, graze:()=>25, longshot:d=>Math.min(100,d/40|0), capture:()=>5 },
+  add(kind,val){ const pts=this.rules[kind](val)||0; run.score+=pts;
+    run.breakdown[kind]=(run.breakdown[kind]||0)+pts;
+    DOM.score.textContent=run.score; return pts; }
+};
+
+/* factories */
+function makePlanet(x,y,opts={}){
+  const bodyR=opts.bodyR??24+R()*16;
+  return Object.assign({x,y,baseY:y,baseX:x,bodyR,orbitR:bodyR+52,
+    bobA:0,bobP:R()*TAU,bobS:0.6+R()*0.7,bin:null,pulse:R()*TAU},opts);}
+function makeSun(x,y){ const bodyR=30+R()*14;
+  return {x,y,baseX:x,baseY:y,bodyR,orbA:R()*TAU,orbS:0.5+R()*0.5,orbR:0,pulse:R()*TAU};}
+function makeStar(x,y){ return {x,y,got:false,t:R()*TAU}; }
+
+/* generation */
+function generateAhead(){
+  const c=effCfg();
+  while(genX<player.x+W*1.8){
+    const gap=c.gapB+R()*c.gapS;
+    let y=lastY+(R()*2-1)*(150+Math.min(run.captures*5,180));
+    y=Math.max(-320,Math.min(320,y));
+    lastY=y; genX+=gap;
+    const roll=R();
+    if(roll<c.sunC){
+      const s=makeSun(genX,y);
+      if(R()<.6) s.orbR=60+R()*70;
+      suns.push(s);
+      genX+=300+R()*120;
+      planets.push(makePlanet(genX,lastY+(R()*120-60)));
+    } else if(roll<c.sunC+c.binC){
+      const node={x:genX,y,R:90+R()*40,ang:R()*TAU,speed:(0.5+R()*0.4)*(R()<.5?-1:1)};
+      const p1=makePlanet(node.x-node.R,y), p2=makePlanet(node.x+node.R,y);
+      p1.bin={node,off:0}; p2.bin={node,off:Math.PI};
+      planets.push(p1,p2);
+    } else {
+      const p=makePlanet(genX,y);
+      if(R()<c.movC) p.bobA=50+R()*80;
+      planets.push(p);
+    }
+    const lp=planets[planets.length-1];
+    const n=3+(R()*3|0), a0=R()*TAU;
+    for(let i=0;i<n;i++){ const a=a0+i*(TAU/n);
+      stars.push(makeStar(lp.x+Math.cos(a)*lp.orbitR,lp.y+Math.sin(a)*lp.orbitR)); }
+    if(planets.length>1&&R()<.5){ const pv=planets[planets.length-2];
+      stars.push(makeStar((pv.x+lp.x)/2,(pv.y+lp.y)/2+(R()*80-40))); }
+  }
+  planets=planets.filter(p=>p.x>player.x-W*1.5);
+  suns=suns.filter(s=>s.x>player.x-W*1.5);
+  stars=stars.filter(s=>!s.got&&s.x>player.x-W*1.5);
+}
+
+/* physics */
+const INFLUENCE=2.7, G_BASE=4.8e6;
+function gravityAt(x,y,exclude){
+  let ax=0,ay=0;
+  const age=(performance.now()-player.launchT)/1000;
+  if(player.mode==='fly'&&age>effCfg().gravWin) return [0,0];
+  for(const p of planets){
+    if(p===exclude) continue;
+    const dx=p.x-x,dy=p.y-y,d2=dx*dx+dy*dy;
+    const inf=p.orbitR*INFLUENCE;
+    if(d2>inf*inf) continue;
+    const d=Math.sqrt(d2),a=G_BASE*(p.bodyR/30)/Math.max(d2,900);
+    ax+=dx/d*a; ay+=dy/d*a;
+  }
+  return [ax,ay];
+}
+function simulatePreview(x,y,vx,vy){
+  const pts=[],dt=1/50;
+  for(let i=0;i<48;i++){
+    const [ax,ay]=gravityAt(x,y,player.planet);
+    vx+=ax*dt; vy+=ay*dt; x+=vx*dt; y+=vy*dt;
+    if(i%3===0) pts.push({x,y});
+    let hit=false;
+    for(const p of planets){ const d=Math.hypot(x-p.x,y-p.y);
+      if(d<p.bodyR+8||(d<=p.orbitR&&p!==player.planet)){hit=true;break;} }
+    if(!hit) for(const s of suns){ if(Math.hypot(x-s.x,y-s.y)<s.bodyR+8){hit=true;break;} }
+    if(hit) break;
+  }
+  return pts;
+}
+function updateOrbitPos(dt){
+  const p=player.planet, w=effCfg().speed/p.orbitR;
+  player.angle+=player.dir*w*dt;
+  player.x=p.x+Math.cos(player.angle)*p.orbitR;
+  player.y=p.y+Math.sin(player.angle)*p.orbitR;
+}
+function launch(){
+  const c=effCfg();
+  player.mode='fly';
+  player.vx=-Math.sin(player.angle)*player.dir*c.speed;
+  player.vy= Math.cos(player.angle)*player.dir*c.speed;
+  player.lastPlanet=player.planet; player.cleared=false;
+  player.dashed=false; player.brake=1; player.launchT=performance.now(); player.shotDist=0;
+  DOM.brakeWrap.classList.add('on');
+  beep(520,0.1,'triangle',0.12,180);
+  burst(player.x,player.y,8,CREAM,60);
+}
+function dash(){
+  if(player.mode!=='fly'||player.dashed) return;
+  player.dashed=true;
+  const sp=Math.hypot(player.vx,player.vy),k=(sp+170)/sp;
+  player.vx*=k; player.vy*=k;
+  burst(player.x,player.y,14,GOLD,150);
+  beep(300,0.14,'square',0.1,260);
+}
+function capture(p){
+  const dtc=(performance.now()-player.launchT)/1000, c=effCfg();
+  player.mode='orbit'; player.planet=p;
+  player.angle=Math.atan2(player.y-p.y,player.x-p.x);
+  const rel=player.vx*(-Math.sin(player.angle))+player.vy*Math.cos(player.angle);
+  player.dir=rel>=0?1:-1;
+  run.combo=dtc<c.capWin?Math.min(run.combo+1,5):1;
+  DOM.combo.textContent='COMBO ×'+run.combo;
+  DOM.combo.classList.toggle('on',run.combo>1);
+  if(player.shotDist>120) Score.add('longshot',player.shotDist);
+  Score.add('capture');
+  if(player.shotDist>run.longest) run.longest=player.shotDist|0;
+  run.captures++;
+  player.brake=1;
+  const s=Math.min(run.captures/10|0,SECTORS.length-1);
+  if(s!==run.sector){ run.sector=s;
+    const inf=(modeName==='infinite'||modeName==='versus');
+    DOM.bannerS.textContent=inf?'LEVEL '+infLevel():'SECTOR '+(s+1);
+    DOM.bannerN.textContent=inf?'harder world':SECTORS[s].name;
+    DOM.banner.style.opacity=1; setTimeout(()=>DOM.banner.style.opacity=0,1800);
+    beep(440,0.3,'sine',0.15,220);
+  }
+  DOM.lvl.textContent=(modeName==='infinite'||modeName==='versus')?'LEVEL '+infLevel()+'/7':'';
+  DOM.brakeFill.style.width='100%';
+  shake=Math.max(shake,4);
+  burst(player.x,player.y,12,CREAM,90);
+  beep(140,0.18,'sine',0.2,-40); beep(560+run.combo*90,0.07,'triangle',0.09);
+}
+function burst(x,y,n,color,speed){
+  for(let i=0;i<n;i++){ const a=R()*TAU,s=speed*(0.3+R());
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.5+R()*0.5,max:1,color,r:1.5+R()*2.5}); }
+}
+function die(reason){
+  if(state!=='play') return;
+  state='dying'; deathTimer=0;
+  DOM.deathReason.textContent=reason;
+  burst(player.x,player.y,40,CORAL,260);
+  burst(player.x,player.y,25,CREAM,140);
+  shake=18; beep(180,0.5,'sawtooth',0.2,-140);
+}
+
+/* flow */
+const mp={p1:null,p2:null,seed:null};
+function startRun(seed){
+  rng=seed!==undefined?mulberry32(seed):Math.random;
+  planets=[];suns=[];stars=[];particles=[];trail=[];preview=[];
+  shake=0;timeScale=1;genX=0;lastY=0;nearVoid=0;focus=false;
+  run={combo:1,captures:0,sector:0,longest:0,closestGraze:Infinity,score:0,stars:0,breakdown:{}};
+  DOM.score.textContent='0'; DOM.combo.classList.remove('on');
+  DOM.brakeWrap.classList.remove('on');
+  DOM.sector.textContent=CFG().name; DOM.lvl.textContent='';
+  const first=makePlanet(0,0); planets.push(first);
+  player={mode:'orbit',planet:first,angle:R()*TAU,dir:1,x:0,y:0,vx:0,vy:0,
+    lastPlanet:first,cleared:false,r:7,dashed:false,brake:1,launchT:0,shotDist:0};
+  updateOrbitPos(0);
+  cam.x=player.x-W*0.35; cam.y=player.y-H*0.5;
+  generateAhead();
+  state='play';
+  graceUntil=performance.now()+500;
+}
+function endRun(){
+  const bk=bestKey(), prev=+(localStorage.getItem(bk)||0);
+  if(run.score>prev&&modeName!=='versus'){ localStorage.setItem(bk,run.score); DOM.bestVal.textContent=run.score; }
+  DOM.finalScore.textContent=run.score;
+  DOM.stCaptures.textContent=run.captures;
+  DOM.stStars.textContent=run.stars;
+  DOM.stGraze.textContent=isFinite(run.closestGraze)?(run.closestGraze|0)+'m':'—';
+  DOM.stSector.textContent=(modeName==='infinite'||modeName==='versus')?infLevel()+'/7':run.sector+1;
+  if(modeName==='versus') handleVersusEnd();
+  DOM.dead.classList.remove('hidden');
+  state='dead';
+}
+function handleVersusEnd(){
+  if(mp.p1===null){ mp.p1=run.score; DOM.p1Score.textContent=run.score;
+    setTimeout(()=>{ if(state!=='dead')return;
+      DOM.dead.classList.add('hidden'); DOM.pass.classList.remove('hidden'); state='passWait'; },2200);
+  } else { mp.p2=run.score;
+    const d=mp.p2-mp.p1;
+    DOM.mpResult.textContent=d>0?'PLAYER 2 WINS by '+d:d<0?'PLAYER 1 WINS by '+(-d):'PERFECT TIE';
+    setTimeout(()=>{ mp.p1=null; },2600);
+  }
+}
+function toMenu(){
+  state='menu';
+  ['dead','pause','pass'].forEach(id=>DOM[id].classList.add('hidden'));
+  DOM.menu.classList.remove('hidden');
+  DOM.bestVal.textContent=localStorage.getItem(bestKey())||0;
+}
+function startMenuGame(){
+  DOM.menu.classList.add('hidden');
+  DOM.mpResult.textContent='';
+  if(modeName==='versus'){ mp.p1=null; mp.p2=null; mp.seed=(Math.random()*1e9)|0; startRun(mp.seed); }
+  else startRun();
+}
+
+/* input */
+function pressDown(){
+  initAudio(); pressT=performance.now(); holding=true;
+  if(state==='play'&&player.mode==='orbit'){ if(performance.now()<graceUntil) return; focus=true; return; }
+  if(state==='play'&&player.mode==='fly'){ return; }         // hold = brake (handled in update)
+  if(state==='passWait'){ DOM.pass.classList.add('hidden'); startRun(mp.seed); return; }
+  if(state==='dead'&&performance.now()-deadShownAt>600){
+    DOM.dead.classList.add('hidden');
+    if(modeName==='versus'&&mp.p1!==null&&mp.p2===null) startRun(mp.seed); else startRun();
+    return;
+  }
+  if(state==='paused') togglePause();
+}
+function pressUp(){
+  holding=false;
+  const dur=performance.now()-pressT;
+  if(state!=='play') return;
+  if(performance.now()<graceUntil) return;     // ← add this line
+  if(player.mode==='orbit'){ focus=false; launch(); }
+  else if(dur<200) dash();
+}
+addEventListener('pointerdown',e=>{
+  if(e.target.closest('.sysBtn,.modeBtn,#menu,#dead,#pass,#pause')) return;  
+  e.preventDefault(); pressDown();
+});
+addEventListener('pointerup',()=>pressUp());
+addEventListener('keydown',e=>{
+  if(e.repeat) return;
+  if(e.code==='Space'){ e.preventDefault(); pressDown(); }
+  else if(e.code==='KeyP'||e.code==='Escape') togglePause();
+  else if(e.code==='KeyR'&&state!=='menu'){ DOM.dead.classList.add('hidden'); startRun(); }
+  else if(e.code==='KeyM') toMenu();
+});
+addEventListener('keyup',e=>{ if(e.code==='Space') pressUp(); });
+function togglePause(){
+  if(state==='play'){ state='paused'; DOM.pause.classList.remove('hidden'); }
+  else if(state==='paused'){ state='play'; graceUntil=performance.now()+500; DOM.pause.classList.add('hidden'); }
+}
+$('btnPause').onclick=e=>{ e.stopPropagation(); togglePause(); };
+$('btnRestart').onclick=e=>{ e.stopPropagation();
+  DOM.pause.classList.add('hidden'); DOM.dead.classList.add('hidden'); startRun(); };
+
+document.querySelectorAll('.modeBtn').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    document.querySelectorAll('.modeBtn').forEach(b=>b.classList.remove('sel'));
+    btn.classList.add('sel');
+    modeName=btn.dataset.mode;
+    DOM.bestVal.textContent=localStorage.getItem(bestKey())||0;
+    DOM.modeDesc.textContent= modeName==='versus'?'2 players · same world · highest score wins'
+      : modeName==='infinite'?'endless · 7 levels of escalating chaos'
+      : 'hold to aim · release to launch';
+  });
+});
+$('startKey').addEventListener('pointerup',e=>{ e.stopPropagation(); startMenuGame(); });
+$('menu').addEventListener('pointerup',e=>{ e.stopPropagation(); startMenuGame(); });
+
+/* update */
+function update(dt,tms){
+  for(const p of planets){
+    if(p.bobA) p.y=p.baseY+Math.sin(tms*0.001*p.bobS+p.bobP)*p.bobA;
+    if(p.bin){ const n=p.bin.node; n.ang+=n.speed*dt;
+      p.x=n.x+Math.cos(n.ang+p.bin.off)*n.R;
+      p.y=n.y+Math.sin(n.ang+p.bin.off)*n.R; }
+  }
+    for(const s of suns){ s.pulse+=0.02;
+    if(s.orbR){ s.orbA+=s.orbS*dt;
+      s.x=s.baseX+Math.cos(s.orbA)*s.orbR; s.y=s.baseY+Math.sin(s.orbA)*s.orbR; } }
+
+  if(state==='play'){
+    const slow=(focus&&player.mode==='orbit')?0.25:1;
+    if(player.mode==='orbit'){
+      updateOrbitPos(dt*slow);
+      const c=effCfg();
+      preview=simulatePreview(player.x,player.y,
+        -Math.sin(player.angle)*player.dir*c.speed,
+         Math.cos(player.angle)*player.dir*c.speed);
+    } else {
+      if(holding&&player.brake>0){
+        player.brake=Math.max(0,player.brake-1.1*dt);
+        player.vx*=Math.pow(0.35,dt); player.vy*=Math.pow(0.35,dt);
+      }
+      DOM.brakeFill.style.width=(player.brake*100)+'%';
+      const [ax,ay]=gravityAt(player.x,player.y,player.lastPlanet);
+      player.vx+=ax*dt; player.vy+=ay*dt;
+      const ox=player.x,oy=player.y;
+      player.x+=player.vx*dt; player.y+=player.vy*dt;
+      player.shotDist+=Math.hypot(player.x-ox,player.y-oy);
+
+      let dead=false;
+      for(const s of suns){
+        const d=Math.hypot(player.x-s.x,player.y-s.y);
+        if(d<s.bodyR+player.r+6){ die('RED SUN'); dead=true; break; }
+        if(d-s.bodyR<run.closestGraze) run.closestGraze=d-s.bodyR;
+      }
+      if(!dead) for(const p of planets){
+        const d=Math.hypot(player.x-p.x,player.y-p.y);
+        if(p===player.lastPlanet&&!player.cleared&&d>p.orbitR+12) player.cleared=true;
+        if(d<p.bodyR+player.r){ die('CRASHED'); dead=true; break; }
+        if(d<=p.orbitR&&(p!==player.lastPlanet||player.cleared)){ capture(p); break; }
+      }
+      if(!dead&&state==='play'){
+        let nearest=Infinity;
+        for(const p of planets) nearest=Math.min(nearest,Math.hypot(player.x-p.x,player.y-p.y));
+        for(const s of suns) nearest=Math.min(nearest,Math.hypot(player.x-s.x,player.y-s.y));
+        nearVoid=nearest;
+        if(nearest>VOID_DIST) die('LOST TO THE VOID');
+        for(const st of stars){
+          if(!st.got&&Math.hypot(player.x-st.x,player.y-st.y)<26){
+            st.got=true; run.stars++;
+            Score.add('star',run.combo);
+            burst(st.x,st.y,10,GOLD,110);
+            beep(880+run.combo*120,0.1,'sine',0.14,120);
+          }
+        }
+      }
+    }
+    trail.push({x:player.x,y:player.y});
+    if(trail.length>22) trail.shift();
+    generateAhead();
+  }
+  if(state==='dying'){
+    timeScale+=(0.35-timeScale)*0.15;
+    deathTimer+=dt;
+    if(deathTimer>0.55){ timeScale=1; deadShownAt=performance.now(); endRun(); }
+  }
+  for(const pt of particles){ pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.vx*=0.96; pt.vy*=0.96; pt.life-=dt; }
+  particles=particles.filter(pt=>pt.life>0);
+  const lookX=player.mode==='fly'?player.vx*0.25:(effCfg().speed*0.3*player.dir);
+  const tx=player.x+lookX-W*0.38, ty=player.y-H*0.5;
+  cam.x+=(tx-cam.x)*0.06; cam.y+=(ty-cam.y)*0.06;
+  shake*=0.88;
+}
+
+/* ================= draw ================= */
+let bgStars=[];
+function makeBgStars(){ bgStars=[]; const n=Math.min(220,(W*H)/9000|0);
+  for(let i=0;i<n;i++) bgStars.push({x:R()*2000,y:R()*1200,z:0.2+R()*0.6,r:R()*1.4+0.4}); }
+function resize(){ DPR=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight;
+  cvs.width=W*DPR; cvs.height=H*DPR; cvs.style.width=W+'px'; cvs.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0); makeBgStars(); }
+addEventListener('resize',resize);
+
+function draw(t){
+  ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
+  const sx=(Math.random()*2-1)*shake, sy=(Math.random()*2-1)*shake;
+  const accent=SECTORS[run?run.sector:0].accent;
+  for(const s of bgStars){
+    const px=((s.x-cam.x*s.z)%2000+2000)%2000-(2000-W)/2;
+    const py=((s.y-cam.y*s.z)%1200+1200)%1200-(1200-H)/2;
+    if(px<-10||px>W+10||py<-10||py>H+10) continue;
+    ctx.fillStyle='rgba(242,237,228,'+(0.15+s.z*0.35)+')';
+    ctx.fillRect(px,py,s.r,s.r);
+  }
+  ctx.save(); ctx.translate(-cam.x+sx,-cam.y+sy);
+
+  for(const p of planets){
+    const cur=p===player.planet&&state!=='dead';
+    ctx.setLineDash([4,7]); ctx.lineWidth=1;
+    ctx.strokeStyle=cur?accent:(p.bin?'rgba(184,167,232,0.22)':'rgba(242,237,228,0.16)');
+    ctx.globalAlpha=cur?0.65:1;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.orbitR,0,TAU); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha=1;
+  }
+  for(const p of planets){
+    if(p.bin&&p.bin.off===0){
+      const q=planets.find(o=>o.bin&&o.bin.node===p.bin.node&&o!==p);
+      if(q){ ctx.strokeStyle='rgba(184,167,232,0.18)'; ctx.lineWidth=1; ctx.setLineDash([2,6]);
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke(); ctx.setLineDash([]); }
+    }
+  }
+  for(const p of planets){
+    ctx.fillStyle=TEAL;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.bodyR,0,TAU); ctx.fill();
+    ctx.fillStyle='rgba(11,13,16,0.35)';
+    ctx.beginPath(); ctx.arc(p.x+p.bodyR*0.3,p.y-p.bodyR*0.25,p.bodyR*0.4,0,TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x-p.bodyR*0.4,p.y+p.bodyR*0.3,p.bodyR*0.22,0,TAU); ctx.fill();
+    ctx.strokeStyle=p===player.planet?accent:'rgba(242,237,228,0.5)';
+    ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.bodyR,0,TAU); ctx.stroke();
+  }
+  for(const s of suns){
+    const g=0.75+Math.sin(s.pulse*2)*0.25;
+    ctx.fillStyle='rgba(255,80,60,'+(0.14*g)+')';
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.bodyR+16,0,TAU); ctx.fill();
+    ctx.fillStyle=CORAL;
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.bodyR,0,TAU); ctx.fill();
+    ctx.strokeStyle=CORAL; ctx.lineWidth=3; ctx.lineCap='round';
+    for(let i=0;i<10;i++){
+      const a=i*(TAU/10)+t*0.0006;
+      ctx.beginPath();
+      ctx.moveTo(s.x+Math.cos(a)*(s.bodyR+3), s.y+Math.sin(a)*(s.bodyR+3));
+      ctx.lineTo(s.x+Math.cos(a)*(s.bodyR+11), s.y+Math.sin(a)*(s.bodyR+11));
+      ctx.stroke();
+    }
+  }
+  for(const st of stars){
+    if(st.got) continue;
+    st.t+=0.04;
+    const r=5+Math.sin(st.t)*1.5;
+    ctx.save(); ctx.translate(st.x,st.y); ctx.rotate(st.t*0.5);
+    ctx.fillStyle=GOLD;
+    ctx.beginPath();
+    for(let i=0;i<8;i++){ const a=i*(TAU/8), rad=i%2?r*0.45:r;
+      ctx[i?'lineTo':'moveTo'](Math.cos(a)*rad,Math.sin(a)*rad); }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  if(state==='play'&&player.mode==='orbit'&&preview.length>1){
+    ctx.setLineDash([3,8]); ctx.lineWidth=1.5; ctx.strokeStyle=accent;
+    ctx.beginPath(); ctx.moveTo(player.x,player.y);
+    for(const pt of preview) ctx.lineTo(pt.x,pt.y);
+    ctx.stroke(); ctx.setLineDash([]);
+    const lp=preview[preview.length-1];
+    ctx.fillStyle=accent; ctx.globalAlpha=0.8;
+    ctx.beginPath(); ctx.arc(lp.x,lp.y,3,0,TAU); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  if(trail.length>2){
+    for(let i=1;i<trail.length;i++){
+      const a=i/trail.length;
+      ctx.strokeStyle='rgba(255,107,74,'+(a*0.55)+')';
+      ctx.lineWidth=a*3;
+      ctx.beginPath(); ctx.moveTo(trail[i-1].x,trail[i-1].y); ctx.lineTo(trail[i].x,trail[i].y); ctx.stroke();
+    }
+  }
+  if(state!=='dead'&&state!=='dying'){
+    let ang;
+    if(player.mode==='orbit')
+      ang=Math.atan2(Math.cos(player.angle)*player.dir,-Math.sin(player.angle)*player.dir);
+    else ang=Math.atan2(player.vy,player.vx);
+    ctx.save(); ctx.translate(player.x,player.y); ctx.rotate(ang);
+    ctx.fillStyle=CREAM;
+    ctx.beginPath(); ctx.moveTo(11,0); ctx.lineTo(-7,6); ctx.lineTo(-4,0); ctx.lineTo(-7,-6);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  for(const pt of particles){
+    ctx.globalAlpha=Math.max(pt.life/pt.max,0);
+    ctx.fillStyle=pt.color;
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,pt.r,0,TAU); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+
+  if(state==='play'&&player.mode==='fly'&&nearVoid>560){
+    const k=Math.min((nearVoid-560)/(VOID_DIST-560),1);
+    ctx.strokeStyle='rgba(255,107,74,'+(0.2+k*0.5*(0.6+0.4*Math.sin(t*0.012)))+')';
+    ctx.lineWidth=6; ctx.strokeRect(3,3,W-6,H-6);
+  }
+}
+
+/* ================= main loop + init ================= */
+let last=performance.now();
+function frame(t){
+  const dt=Math.min((t-last)/1000,0.05); last=t;
+  if(state!=='paused') update(dt*timeScale,t);
+  draw(t);
+  requestAnimationFrame(frame);
+}
+resize();
+DOM.bestVal.textContent=localStorage.getItem(bestKey())||0;
+startRun();
+state='menu';
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
+
+
+
